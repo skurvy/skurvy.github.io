@@ -1,0 +1,13 @@
+name: Skurvy
+dp: 
+description: "
+  <p>
+    I'm Skurvy - a developer, researcher, homelab hobbyist, and hacking enthusiast.
+  </p>
+"
+email: 
+contact:
+  - title: gitlab
+    url: https://gitlab.com/skurvy
+  - title: github
+    url: https://github.com/skurvy

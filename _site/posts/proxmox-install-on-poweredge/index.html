@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/assets/icons/favicon.ico">
+  <title>Skurvy Sailor | Guide: Installing Proxmox on a Stubborn Dell Poweredge</title>
+  
+  <link rel="stylesheet" href="/assets/css/post.css" />
+  <link rel="stylesheet" href="/assets/css/syntax.css" />
+  
+  <link rel="stylesheet" href="/assets/css/common.css" />
+  <script src="/assets/js/categories.js"></script>
+  
+  <script defer src="/assets/js/lbox.js"></script>
+  
+</head>
+
+  <body>
+    <main>
+      <header>
+  <a class="site-title" href="/">Skurvy Sailor</a>
+</header>
+
+      <section class="article">
+        <div class="article-header">
+          <h2 class="article-title">Guide: Installing Proxmox on a Stubborn Dell Poweredge</h2>
+          <small class="date">26 Jun 2022</small>
+          <div class="categories">
+            
+            <a href="#!" class="category">guide</a>
+            
+            <a href="#!" class="category">proxmox</a>
+            
+            <a href="#!" class="category">homelab</a>
+            
+          </div>
+        </div>
+        <div class="content"><!--more-->
+
+<h2 id="table-of-contents">Table of contents</h2>
+<ol>
+  <li><a href="#Introduction">Introduction</a></li>
+  <li><a href="#Prep">Prep</a></li>
+  <li><a href="#Instructions">Instructions</a> <br />
+ a. <a href="#1-Debian-Install">Debian Install</a><br />
+ b. <a href="#2-Proxmox-Install">Proxmox Install</a><br />
+ c. <a href="#3-Post-Install-Steps">Post Install Steps</a><br /></li>
+  <li><a href="#Closing">Closing</a></li>
+  <li><a href="#Resources">Resources</a></li>
+</ol>
+
+<h2 id="introduction">Introduction</h2>
+<p>This guide is for anyone having issues installing proxmox on a Dell Poweredge. I received a R610 from a friend and wanted to install proxmox on it and add it to my existing cluster. I ran into issues with ACPI errors, as well as issue with the display and ahd to put in some work to get everything working.</p>
+
+<p>You will be installing Debian and installing proxmox over it. There is a guide for this, but if you want to be able to join the cluster, there are some extra steps needed that are not already documented (as far as I can tell)</p>
+
+<p>If you are having trouble with the install and would love to skip all the pain I had to endure with the trial and error of getting this setup, follow the below instructions. If you ever want to be able to join a cluster, this guide is a must. I had to string together a bunch of forum answers (posted in the <a href="#Resources">resources</a> section below)</p>
+
+<h3 id="prep">Prep:</h3>
+<ul>
+  <li>BACKUPS!! I would suggest backing any existing VMs up to a usb and crushing any existing configs. Obviously you do all of this at your own risk.</li>
+  <li><a href="https://www.balena.io/etcher/">BalenaEtcher</a> if you are burning iso’s from Windows. Rufus does some weird stuff and I had lots of issues with it. If you’re on linux, <a href="https://itsfoss.com/live-usb-with-dd-command/">just use dd as usual</a></li>
+  <li><a href="https://www.debian.org/distrib/">Debian 11 iso</a> on a bootable flashdrive</li>
+  <li>I’m assuming you already have RAID setup. I’m using RAID 0, but that portion is up to you to figure out.</li>
+</ul>
+
+<h2 id="steps">Steps</h2>
+<p><a href="#1_Debian-Install">Step 1</a>: Install debian 11<br />
+<a href="#2_Proxmox-Install">Step 2</a>: Install proxmox on-top of Debian<br />
+<a href="#3_Post-Install-Steps">Step 3</a>: After Proxmox has booted, there are still a few things you need to configure<br /></p>
+
+<h3 id="1-debian-install">1. Debian Install</h3>
+
+<ol>
+  <li>Insert the bootable Debian USB into the server</li>
+  <li>Hit <code class="language-plaintext highlighter-rouge">f11</code> to get into UEFI boot menu</li>
+  <li>Select the bootable USB</li>
+  <li>Choose <code class="language-plaintext highlighter-rouge">Graphical Install</code></li>
+  <li>Go through the standard install steps until you get to hostname</li>
+  <li>hostname: choose the name you want your node to be named. for this example I will use “server1”</li>
+  <li>Domain name: choose your local domain if you have one. If not, I just put “lan” here</li>
+  <li>Continue with the user and password setup as you wish, until you get to the <code class="language-plaintext highlighter-rouge">Partition Disk</code> section.</li>
+  <li>FOLLOW THESE NEXT STEPS CAREFULLY. If you want join a cluster, you will need to set the lvm names manually. Also, this is the part where you lose data. If you have something you need to backup, restart this and do that.</li>
+  <li>Pick <code class="language-plaintext highlighter-rouge">Guided - use entire disk and set up LVM</code> option</li>
+  <li>I chose <code class="language-plaintext highlighter-rouge">All files in one partition</code> but that is up to you</li>
+  <li>Click <code class="language-plaintext highlighter-rouge">yes</code></li>
+  <li>IF you need to, click <code class="language-plaintext highlighter-rouge">go back</code> and select <code class="language-plaintext highlighter-rouge">Partition disks again</code>. Once you get back to the <code class="language-plaintext highlighter-rouge">Partition Disks</code> screen, DO NOT HIT FINISH YET</li>
+  <li>Click <code class="language-plaintext highlighter-rouge">Configure the Logical Volume Manager</code>, then click <code class="language-plaintext highlighter-rouge">yes</code></li>
+  <li>Click <code class="language-plaintext highlighter-rouge">Display configuration details</code> and take note of which disk the lvm is currently on. You will need to know this for step 18.</li>
+  <li>Click <code class="language-plaintext highlighter-rouge">delte logical volume</code> and delete both <code class="language-plaintext highlighter-rouge">root</code> and <code class="language-plaintext highlighter-rouge">swap_1</code>.<br /> Note: The reason for this, is that proxmox expects you to have a lvm called <code class="language-plaintext highlighter-rouge">pve</code> if it is not named pve, joining a cluster will cause a ton of issues since that is where clusters look for storage</li>
+  <li>Now, Click <code class="language-plaintext highlighter-rouge">delete volume group</code> and delete the <code class="language-plaintext highlighter-rouge">&lt;hostname&gt;-vg</code> volume group.</li>
+  <li>Click <code class="language-plaintext highlighter-rouge">Create volume group</code> and name it <code class="language-plaintext highlighter-rouge">pve</code> select the drive that the previous volume group was on.</li>
+  <li>Click <code class="language-plaintext highlighter-rouge">Create logical volume</code> and create <code class="language-plaintext highlighter-rouge">root</code> under <code class="language-plaintext highlighter-rouge">pve</code>. Give it as much room as you want for the OS plus any iso images, vz backups, and container templates on this node.</li>
+  <li>Now <code class="language-plaintext highlighter-rouge">Create logical volume</code> and create <code class="language-plaintext highlighter-rouge">swap_1</code>. This will be your swap, so give it as much as you want (I did like 4GBs)</li>
+  <li>You should have a large amount of unused storage. This is fine. We will be using it to create pve-data once we install proxmox</li>
+  <li>Verify the config in <code class="language-plaintext highlighter-rouge">Display configuration details</code></li>
+  <li>Should look something like this: <br /> pve <br /> physical volume: <code class="language-plaintext highlighter-rouge">/dev/sd&lt;drive you chose&gt;</code> <br />  provides logical volume: root <br />  provides logical volume: swap_1</li>
+  <li>If it is all good, click finish.</li>
+  <li>Back at the <code class="language-plaintext highlighter-rouge">Partition Disks</code> page, click the <code class="language-plaintext highlighter-rouge">pve data #1</code> drive. Make sure it is set to <code class="language-plaintext highlighter-rouge">do not use</code></li>
+  <li>Now <code class="language-plaintext highlighter-rouge">pve root #1</code>: use as <code class="language-plaintext highlighter-rouge">EXT4 journaling file system</code> and <code class="language-plaintext highlighter-rouge">mount point: \ - root</code></li>
+  <li><code class="language-plaintext highlighter-rouge">pve swap_1 #1</code>: use as <code class="language-plaintext highlighter-rouge">swap area</code></li>
+  <li>leave the <code class="language-plaintext highlighter-rouge">primary</code> as is, finish, and write changes to disk.</li>
+  <li>continue with defaults until you get to <code class="language-plaintext highlighter-rouge">software selection</code>.</li>
+  <li>Only select <code class="language-plaintext highlighter-rouge">ssh server</code> and <code class="language-plaintext highlighter-rouge">standard system utilities</code></li>
+  <li>Finish the install and reboot into debian!</li>
+</ol>
+
+<h3 id="2-proxmox-install">2. Proxmox Install</h3>
+
+<ol>
+  <li>NOTE:READ THIS FIRST: PAUSE BEFORE REBOOTING TO PROXMOX! <br /> Also, make life easier by doing the static ip config first and sshing in so you can copy-paste commands.</li>
+  <li>Now that you are in debian SU to root and follow this guide. MAKE SURE NOT TO REBOOT. Come back to this guide first. <a href="https://pve.proxmox.com/wiki/Install_Proxmox_VE_on_Debian_11_Bullseye">guide</a> <br /> Note: We need to turn acpi off to make sure it will even reboot. Otherwise, you will have a fun time setting that flag with a live image.</li>
+  <li>Before rebooting, edit <code class="language-plaintext highlighter-rouge">/etc/default/grub</code> and add <code class="language-plaintext highlighter-rouge">acpi=off</code> to <code class="language-plaintext highlighter-rouge">GRUB_CMDLINE_LINUX_DEFAULT='quite'</code>. <br />Should look like <code class="language-plaintext highlighter-rouge">GRUB_CMDLINE_LINUX_DEFAULT='quite acpi=off'</code></li>
+  <li>run <code class="language-plaintext highlighter-rouge">\usr\sbin\grub-mkconfig &gt; /boot/grub/grub.cfg</code></li>
+  <li>for a sanity check run: <code class="language-plaintext highlighter-rouge">cat /boot/grub/grub.cfg | grep acpi=off</code> and make sure you can see a few lines</li>
+  <li>Reboot, and return back to/finish the guide above. (clean up the old kernel and os-prob… etc.)</li>
+</ol>
+
+<h3 id="3-post-install-steps">3. Post Install Steps</h3>
+
+<ol>
+  <li>As root, edit <code class="language-plaintext highlighter-rouge">/etc/network/interfaces</code> and create a vmbr0 to the interface your ethernet is plugged into. Set that vmbr0 to the static IP you used previously and bridge it to the interface.</li>
+  <li>Remove the old config from the interface itself by just deleting those fields. Save and exit.<br /> Complete config should look like this:
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code> auto &lt;old iface&gt;
+ iface &lt;old iface&gt; inet manual
+
+ &lt;other interfaces etc. here...&gt;
+
+ auto vmbr0
+ iface vmbr0 inet manual
+     address &lt;static-ip&gt;/&lt;cidr&gt;
+     gateway &lt;gateway-ip&gt;
+     bridge_ports &lt;old iface&gt;
+     bridge_stp off
+     bridge_fd 0
+</code></pre></div>    </div>
+  </li>
+  <li>make sure that your <code class="language-plaintext highlighter-rouge">/etc/hosts</code> is still <code class="language-plaintext highlighter-rouge">&lt;static-ip&gt; &lt;hostname&gt;.lan &lt;hostname&gt;</code></li>
+  <li>Run the following commands:
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code> ifdown &lt;old iface&gt; 
+ ifup vmbr0
+ ifup &lt;old iface&gt;
+</code></pre></div>    </div>
+  </li>
+  <li>Make sure you can ping your gateway</li>
+  <li>Navigate to the web ui at <code class="language-plaintext highlighter-rouge">https://&lt;static-ui&gt;:8006/</code></li>
+  <li>Now we need to make the <code class="language-plaintext highlighter-rouge">pve/data</code> lv(s)</li>
+  <li>In the shell tab, run <code class="language-plaintext highlighter-rouge">lvscan</code> and <code class="language-plaintext highlighter-rouge">lvs</code></li>
+  <li>You should see <code class="language-plaintext highlighter-rouge">root</code> and <code class="language-plaintext highlighter-rouge">swap</code> with <code class="language-plaintext highlighter-rouge">pve</code> as their VG.</li>
+  <li>run: <code class="language-plaintext highlighter-rouge">lvcreate --name data -T -l +100%FREE pve</code> <br /> Note: this will use the rest of the disk space to make the <code class="language-plaintext highlighter-rouge">data</code> lv</li>
+  <li>On the gui, click on the node (not datacenter) and navigate to <code class="language-plaintext highlighter-rouge">disk</code> -&gt; <code class="language-plaintext highlighter-rouge">LVM-THIN</code>. you should see data there.</li>
+  <li>Now click the datacenter and navigate to <code class="language-plaintext highlighter-rouge">storage</code>.</li>
+  <li>Click <code class="language-plaintext highlighter-rouge">Add</code> -&gt; <code class="language-plaintext highlighter-rouge">LVM-Thin</code> and set the following configs
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ID: local-thin
+Volume group: pve
+Thin pool: data
+Content: Disk image, Container
+</code></pre></div>    </div>
+  </li>
+  <li>go back to the shell on your node and run <code class="language-plaintext highlighter-rouge">lvscan</code> and <code class="language-plaintext highlighter-rouge">lvs</code>. verify data is there. You should also see <code class="language-plaintext highlighter-rouge">local-thin</code> in your server view on the gui</li>
+</ol>
+
+<h2 id="closing">Closing</h2>
+
+<p>You should be good to join the cluster now! There may be a better way to do all this, but after DAYS of troubleshooting, this is what worked for me. Please let me know if this helped you out. I couldn’t find anything like this out there and I am new to the homelab scene and figured I could hopefully help someone having a similar issue.</p>
+
+<h2 id="resources">Resources</h2>
+<ul>
+  <li><a href="https://www.balena.io/etcher/">https://www.balena.io/etcher/</a></li>
+  <li><a href="https://itsfoss.com/live-usb-with-dd-command/">https://itsfoss.com/live-usb-with-dd-command/</a></li>
+  <li><a href="https://www.debian.org/distrib/">https://www.debian.org/distrib/</a></li>
+  <li><a href="https://pve.proxmox.com/wiki/Install_Proxmox_VE_on_Debian_11_Bullseye">https://pve.proxmox.com/wiki/Install_Proxmox_VE_on_Debian_11_Bullseye</a></li>
+  <li><a href="https://www.debian.org/releases/bookworm/amd64/ch06s03.en.html#di-make-bootable">https://www.debian.org/releases/bookworm/amd64/ch06s03.en.html#di-make-bootable</a></li>
+  <li><a href="https://pve.proxmox.com/wiki/Logical_Volume_Manager_(LVM)">https://pve.proxmox.com/wiki/Logical_Volume_Manager_(LVM)</a></li>
+  <li><a href="https://forum.proxmox.com/threads/logical-volume-pve-data-is-not-a-thin-pool.54677/">https://forum.proxmox.com/threads/logical-volume-pve-data-is-not-a-thin-pool.54677/</a></li>
+</ul>
+</div>
+      </section>
+      <footer>
+  <p>&copy; 1947 - 2022 | Skurvy Sailor</p>
+  <p><a href="">Return home</a></p>
+</footer>
+
+    </main>
+    <section id="category-modal-bg"></section>
+<section id="category-modal">
+  <h1 id="category-modal-title"></h1>
+  <section id="category-modal-content"></section>
+</section>
+
+  </body>
+</html>
